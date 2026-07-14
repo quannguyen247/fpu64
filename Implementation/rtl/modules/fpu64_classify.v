@@ -2,11 +2,23 @@
 `include "fpu64_defs.vh"
 
 module fpu64_classify (
+    input wire clk,
+    input wire rst_n,
+
+    input wire valid_in,
+    output wire ready_in,
+
     input wire [63:0] rs1,
     input wire is_double,
 
+    output reg valid_out,
+    input wire ready_out,
+
     output reg [63:0] result
 );
+
+    wire stall = valid_out && !ready_out;
+    assign ready_in = !stall;
 
     wire sp_sign = rs1[31];
     wire [7:0] sp_exp = rs1[30:23];
@@ -73,8 +85,16 @@ module fpu64_classify (
         end
     end
 
-    always @(*) begin
-        result = {54'd0, class_bits};
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            valid_out <= 1'b0;
+            result <= 64'd0;
+        end else if (!stall) begin
+            valid_out <= valid_in;
+            if (valid_in) begin
+                result <= {54'd0, class_bits};
+            end
+        end
     end
 
 endmodule
