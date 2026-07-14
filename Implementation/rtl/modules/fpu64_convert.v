@@ -2,10 +2,19 @@
 `include "fpu64_defs.vh"
 
 module fpu64_convert (
+    input wire clk,
+    input wire rst_n,
+
+    input wire valid_in,
+    output wire ready_in,
+
     input wire [63:0] rs1,
     input wire [4:0] rs2_val,
     input wire [6:0] funct7,
     input wire [2:0] rm,
+
+    output reg valid_out,
+    input wire ready_out,
 
     output reg [63:0] out_fp,
     output reg [63:0] out_int,
@@ -13,6 +22,9 @@ module fpu64_convert (
     output reg we_fpr,
     output reg [4:0] fflags
 );
+
+    wire stall = valid_out && !ready_out;
+    assign ready_in = !stall;
 
     wire sp_s1 = rs1[31];
     wire [7:0] sp_e1 = rs1[30:23];
@@ -31,7 +43,11 @@ module fpu64_convert (
     wire dp_snan1 = dp_nan1 && !dp_f1[51];
     wire dp_inf1 = (dp_e1 == 11'h7FF) && (dp_f1 == 52'd0);
     wire dp_zero1 = (dp_e1 == 11'd0) && (dp_f1 == 52'd0);
+    wire cvt_s_d  = (funct7 == 7'b0100100);
 
+    wire unsupported_fmt = funct7[1]; // Quad (10) or Half (11) precision not supported
+
+    // F2I (Float to Int)
     reg [63:0] f2i_out;
     reg [4:0] f2i_flags;
 
@@ -87,8 +103,12 @@ module fpu64_convert (
         f2i_out = 64'd0;
         f2i_flags = 5'd0;
         f2i_overflow = 1'b0;
+        f2i_guard = 1'b0;
+        f2i_round = 1'b0;
+        f2i_sticky = 1'b0;
+        f2i_shifted = 64'd0;
 
-        if (funct7[2]) begin
+        if (funct7[0]) begin
             f2i_sign = dp_s1;
             f2i_exp = {1'b0, dp_e1} - 12'd1023;
             f2i_temp = {(dp_e1 == 11'd0) ? 1'b0 : 1'b1, dp_f1, 11'd0};
@@ -98,7 +118,7 @@ module fpu64_convert (
             f2i_temp = {(sp_e1 == 8'd0) ? 1'b0 : 1'b1, sp_f1, 40'd0};
         end
 
-        if ((funct7[2] && dp_nan1) || (!funct7[2] && sp_nan1)) begin
+        if ((funct7[0] && dp_nan1) || (!funct7[0] && sp_nan1)) begin
             f2i_flags[`FF_NV] = 1'b1;
             case (rs2_val)
                 5'd0: f2i_out = 64'hFFFFFFFF_7FFFFFFF;
@@ -107,7 +127,7 @@ module fpu64_convert (
                 5'd3: f2i_out = 64'hFFFFFFFFFFFFFFFF;
                 default: f2i_out = 64'd0;
             endcase
-        end else if ((funct7[2] && dp_inf1) || (!funct7[2] && sp_inf1)) begin
+        end else if ((funct7[0] && dp_inf1) || (!funct7[0] && sp_inf1)) begin
             f2i_flags[`FF_NV] = 1'b1;
             if (f2i_sign) begin
                 case (rs2_val)
@@ -126,7 +146,7 @@ module fpu64_convert (
                     default: f2i_out = 64'd0;
                 endcase
             end
-        end else if ((funct7[2] && dp_zero1) || (!funct7[2] && sp_zero1)) begin
+        end else if ((funct7[0] && dp_zero1) || (!funct7[0] && sp_zero1)) begin
             f2i_out = 64'd0;
         end else begin
             if ($signed(f2i_exp) >= $signed(12'd63)) begin
@@ -223,7 +243,7 @@ module fpu64_convert (
             end
         endcase
         if (i2f_abs == 64'd0) begin
-            if (funct7[2]) begin
+            if (funct7[0]) begin
                 i2f_out = {i2f_sign, 11'd0, 52'd0};
             end else begin
                 i2f_out = {32'hFFFFFFFF, i2f_sign, 8'd0, 23'd0};
@@ -236,7 +256,7 @@ module fpu64_convert (
                 end
             end
             i2f_exp = 12'd63 - i2f_lzc;
-            if (funct7[2]) begin
+            if (funct7[0]) begin
                 if (i2f_lzc <= 11) begin
                     i2f_m = i2f_abs >> (11 - i2f_lzc);
                     i2f_rem = i2f_abs << (i2f_lzc + 53);
@@ -305,7 +325,7 @@ module fpu64_convert (
     always @(*) begin
         f2f_out = 64'd0;
         f2f_flags = 5'd0;
-        if (funct7[2]) begin
+        if (funct7[0]) begin
             if (sp_nan1) begin
                 f2f_out = 64'h7FF8000000000000;
                 if (sp_snan1) f2f_flags[`FF_NV] = 1'b1;
@@ -362,31 +382,43 @@ module fpu64_convert (
         end
     end
 
-    always @(*) begin
-        out_fp = 64'd0;
-        out_int = 64'd0;
-        we_gpr = 1'b0;
-        we_fpr = 1'b0;
-        fflags = 5'd0;
-        case (funct7[6:2])
-            5'b11000, 5'b11001: begin
-                we_gpr = 1'b1;
-                out_int = f2i_out;
-                fflags = f2i_flags;
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            valid_out <= 1'b0;
+            out_fp <= 64'd0;
+            out_int <= 64'd0;
+            we_gpr <= 1'b0;
+            we_fpr <= 1'b0;
+            fflags <= 5'd0;
+        end else if (!stall) begin
+            valid_out <= valid_in;
+            if (valid_in) begin
+                out_fp <= 64'd0;
+                out_int <= 64'd0;
+                we_gpr <= 1'b0;
+                we_fpr <= 1'b0;
+                fflags <= 5'd0;
+                case (funct7[6:2])
+                    5'b11000, 5'b11001: begin
+                        we_gpr <= 1'b1;
+                        out_int <= f2i_out;
+                        fflags <= f2i_flags | {unsupported_fmt, 4'd0}; // Flag NV if unsupported format
+                    end
+                    5'b11010, 5'b11011: begin
+                        we_fpr <= 1'b1;
+                        out_fp <= i2f_out;
+                        fflags <= i2f_flags | {unsupported_fmt, 4'd0};
+                    end
+                    5'b01000, 5'b01001: begin
+                        we_fpr <= 1'b1;
+                        out_fp <= f2f_out;
+                        fflags <= f2f_flags | {unsupported_fmt, 4'd0};
+                    end
+                    default: begin
+                    end
+                endcase
             end
-            5'b11010, 5'b11011: begin
-                we_fpr = 1'b1;
-                out_fp = i2f_out;
-                fflags = i2f_flags;
-            end
-            5'b01000, 5'b01001: begin
-                we_fpr = 1'b1;
-                out_fp = f2f_out;
-                fflags = f2f_flags;
-            end
-            default: begin
-            end
-        endcase
+        end
     end
 
 endmodule
