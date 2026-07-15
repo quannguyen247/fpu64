@@ -234,12 +234,16 @@ module fpu64_addsub (
     reg [57:0] ex2_dp_sum;
 
     wire [24:0] sp_m_align;
-    wire sp_guard, sp_round, sp_sticky;
+    wire sp_guard;
+    wire sp_round;
+    wire sp_sticky;
     wire [27:0] sp_op1_align;
     wire [27:0] sp_op2_align;
 
     wire [53:0] dp_m_align;
-    wire dp_guard, dp_round, dp_sticky;
+    wire dp_guard;
+    wire dp_round;
+    wire dp_sticky;
     wire [56:0] dp_op1_align;
     wire [56:0] dp_op2_align;
 
@@ -350,18 +354,23 @@ module fpu64_addsub (
     reg [63:0] ex5_res;
     reg [4:0] ex5_flags;
 
-    reg [28:0] sp_sum_norm_ex3;
     reg [28:0] sp_sum_norm_ex4;
     reg [5:0] sp_shift;
     reg [7:0] sp_exp_adj;
-    reg sp_g, sp_r, sp_s, sp_round_up;
+    reg sp_g;
+    reg sp_r;
+    reg sp_s;
+    reg sp_round_up;
     integer j_sp;
 
     reg [57:0] dp_sum_norm_ex3;
     reg [57:0] dp_sum_norm_ex4;
     reg [6:0] dp_shift;
     reg [10:0] dp_exp_adj;
-    reg dp_g, dp_r, dp_s, dp_round_up;
+    reg dp_g;
+    reg dp_r;
+    reg dp_s;
+    reg dp_round_up;
     integer j_dp;
 
     always @(*) begin
@@ -386,10 +395,6 @@ module fpu64_addsub (
         end
     end
 
-    // ==========================================
-    // ==========================================
-    // STAGE 3: Normalization (LZA)
-    // ==========================================
     reg [28:0] ex3_sp_sum;
     reg [5:0] ex3_sp_shift;
     reg [57:0] ex3_dp_sum;
@@ -459,9 +464,6 @@ module fpu64_addsub (
         end
     end
 
-    // ==========================================
-    // STAGE 4: Normalization (Shift)
-    // ==========================================
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             valid_ex4 <= 1'b0;
@@ -493,10 +495,8 @@ module fpu64_addsub (
                 ex4_sp_res_sign <= ex3_sp_res_sign;
 
                 if (ex3_sp_shift_right) begin
-                    sp_sum_norm_ex3 = ex3_sp_sum >> 1;
-                    sp_sum_norm_ex3[0] = sp_sum_norm_ex3[0] | ex3_sp_sum[0];
                     ex4_sp_exp_adj <= (ex3_sp_exp_adj == 8'hFE) ? 8'hFF : (ex3_sp_exp_adj + 8'd1);
-                    ex4_sp_sum_norm <= sp_sum_norm_ex3;
+                    ex4_sp_sum_norm <= {1'b0, ex3_sp_sum[28:2], ex3_sp_sum[1] | ex3_sp_sum[0]};
                 end else begin
                     ex4_sp_sum_norm <= ex3_sp_sum << ex3_sp_shift;
                     ex4_sp_exp_adj <= ex3_sp_exp_adj - ex3_sp_shift;
@@ -520,9 +520,6 @@ module fpu64_addsub (
         end
     end
 
-    // ==========================================
-    // STAGE 5: Rounding and Pack
-    // ==========================================
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             valid_ex5 <= 1'b0;
