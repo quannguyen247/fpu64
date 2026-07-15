@@ -72,7 +72,7 @@ module fpu64_compare (
                 result <= 64'd0;
                 fflags <= 5'd0;
                 case (funct3)
-                    3'b010: begin // FEQ
+                    3'b010: begin
                         if (any_nan) begin
                             result <= 64'd0;
                             if (any_snan) fflags[`FF_NV] <= 1'b1;
@@ -80,7 +80,7 @@ module fpu64_compare (
                             result <= cmp_eq ? 64'd1 : 64'd0;
                         end
                     end
-                    3'b001: begin // FLT
+                    3'b001: begin
                         if (any_nan) begin
                             result <= 64'd0;
                             fflags[`FF_NV] <= 1'b1;
@@ -88,7 +88,7 @@ module fpu64_compare (
                             result <= cmp_lt ? 64'd1 : 64'd0;
                         end
                     end
-                    3'b000: begin // FLE
+                    3'b000: begin
                         if (any_nan) begin
                             result <= 64'd0;
                             fflags[`FF_NV] <= 1'b1;
