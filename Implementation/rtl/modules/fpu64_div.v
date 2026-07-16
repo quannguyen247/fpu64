@@ -79,7 +79,10 @@ module fpu64_div (
     wire [54:0] sub_res = rem - {1'b0, divisor};
     wire can_sub = (rem >= {1'b0, divisor});
 
-    reg guard, round, sticky, round_up;
+    reg guard;
+    reg round;
+    reg sticky;
+    reg round_up;
     reg [10:0] res_exp;
     reg [51:0] res_frac;
     reg [55:0] quot_shifted;
@@ -231,7 +234,6 @@ module fpu64_div (
                             flags_reg[`FF_NX] <= 1'b1;
                         end else if ($signed(exp) <= $signed(12'd0)) begin
                             res_exp = 11'd0;
-                            // Shift right arithmetic logic
                             if ($signed(exp) < $signed(-12'd54)) begin
                                 guard = 1'b0;
                                 round = 1'b0;
@@ -244,7 +246,7 @@ module fpu64_div (
                                 sticky = quot_shifted[0] | (rem != 55'd0);
                                 res_frac = quot_shifted[54:3];
                             end
-                            
+
                             round_up = 1'b0;
                             case (rm_reg)
                                 `RM_RNE: round_up = guard && (round || sticky || res_frac[0]);
@@ -266,7 +268,7 @@ module fpu64_div (
                             guard = quot[2];
                             round = quot[1];
                             sticky = quot[0] | (rem != 55'd0);
-                            
+
                             round_up = 1'b0;
                             case (rm_reg)
                                 `RM_RNE: round_up = guard && (round || sticky || quot[3]);
@@ -309,7 +311,7 @@ module fpu64_div (
                                 sticky = quot_shifted[0] | (rem != 55'd0);
                                 res_frac = {29'd0, quot_shifted[25:3]};
                             end
-                            
+
                             round_up = 1'b0;
                             case (rm_reg)
                                 `RM_RNE: round_up = guard && (round || sticky || res_frac[0]);
@@ -331,7 +333,7 @@ module fpu64_div (
                             guard = quot[2];
                             round = quot[1];
                             sticky = quot[0] | (rem != 55'd0);
-                            
+
                             round_up = 1'b0;
                             case (rm_reg)
                                 `RM_RNE: round_up = guard && (round || sticky || quot[3]);
