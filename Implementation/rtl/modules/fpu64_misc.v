@@ -24,26 +24,47 @@ module fpu64_misc (
     output reg [4:0] fflags
 );
 
-    wire stall = valid_out && !ready_out;
-    assign ready_in = !stall;
-
-    wire dp_nan1 = (rs1[62:52] == 11'h7FF) && (rs1[51:0] != 52'd0);
-    wire dp_nan2 = (rs2[62:52] == 11'h7FF) && (rs2[51:0] != 52'd0);
-    wire sp_nan1 = (rs1[30:23] == 8'hFF) && (rs1[22:0] != 23'd0);
-    wire sp_nan2 = (rs2[30:23] == 8'hFF) && (rs2[22:0] != 23'd0);
-
-    wire dp_snan1 = dp_nan1 && !rs1[51];
-    wire dp_snan2 = dp_nan2 && !rs2[51];
-    wire sp_snan1 = sp_nan1 && !rs1[22];
-    wire sp_snan2 = sp_nan2 && !rs2[22];
-
-    wire minmax_any_nan = is_double ? (dp_nan1 || dp_nan2) : (sp_nan1 || sp_nan2);
-    wire minmax_any_snan = is_double ? (dp_snan1 || dp_snan2) : (sp_snan1 || sp_snan2);
-    wire minmax_both_nan = is_double ? (dp_nan1 && dp_nan2) : (sp_nan1 && sp_nan2);
-
-    wire sgnj_sign = is_double ? rs1[63] : rs1[31];
-
+    wire stall;
+    wire dp_nan1;
+    wire dp_nan2;
+    wire sp_nan1;
+    wire sp_nan2;
+    wire dp_snan1;
+    wire dp_snan2;
+    wire sp_snan1;
+    wire sp_snan2;
+    wire minmax_any_nan;
+    wire minmax_any_snan;
+    wire minmax_both_nan;
+    wire sgnj_sign;
+    wire cmp_lt;
     reg [63:0] sgnj_res;
+    reg [63:0] minmax_res;
+    reg [4:0] minmax_flg;
+
+    assign stall = valid_out && !ready_out;
+    assign ready_in = !stall;
+    assign dp_nan1 = (rs1[62:52] == 11'h7FF) && (rs1[51:0] != 52'd0);
+    assign dp_nan2 = (rs2[62:52] == 11'h7FF) && (rs2[51:0] != 52'd0);
+    assign sp_nan1 = (rs1[30:23] == 8'hFF) && (rs1[22:0] != 23'd0);
+    assign sp_nan2 = (rs2[30:23] == 8'hFF) && (rs2[22:0] != 23'd0);
+    assign dp_snan1 = dp_nan1 && !rs1[51];
+    assign dp_snan2 = dp_nan2 && !rs2[51];
+    assign sp_snan1 = sp_nan1 && !rs1[22];
+    assign sp_snan2 = sp_nan2 && !rs2[22];
+    assign minmax_any_nan = is_double ? (dp_nan1 || dp_nan2) : (sp_nan1 || sp_nan2);
+    assign minmax_any_snan = is_double ? (dp_snan1 || dp_snan2) : (sp_snan1 || sp_snan2);
+    assign minmax_both_nan = is_double ? (dp_nan1 && dp_nan2) : (sp_nan1 && sp_nan2);
+    assign sgnj_sign = is_double ? rs1[63] : rs1[31];
+
+    fpu64_compare_logic u_cmp_logic (
+        .rs1(rs1),
+        .rs2(rs2),
+        .is_double(is_double),
+        .is_lt(cmp_lt),
+        .is_eq()
+    );
+
     always @(*) begin
         if (is_double) begin
             case (funct3)
@@ -62,22 +83,13 @@ module fpu64_misc (
         end
     end
 
-    wire cmp_lt;
-    fpu64_compare_logic u_cmp_logic (
-        .rs1(rs1),
-        .rs2(rs2),
-        .is_double(is_double),
-        .is_lt(cmp_lt),
-        .is_eq()
-    );
-
-    reg [63:0] minmax_res;
-    reg [4:0] minmax_flg;
     always @(*) begin
         minmax_res = 64'd0;
         minmax_flg = 5'd0;
         if (minmax_any_nan) begin
-            if (minmax_any_snan) minmax_flg[`FF_NV] = 1'b1;
+            if (minmax_any_snan) begin
+                minmax_flg[`FF_NV] = 1'b1;
+            end
             if (minmax_both_nan) begin
                 minmax_res = is_double ? 64'h7FF8000000000000 : 64'hFFFFFFFF_7FC00000;
             end else begin
