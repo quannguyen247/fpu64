@@ -65,7 +65,10 @@ module fpu64_sqrt (
     wire [57:0] sub_res = next_rem - test_val;
     wire can_sub = (next_rem >= test_val);
 
-    reg guard, round, sticky, round_up;
+    reg guard;
+    reg round;
+    reg sticky;
+    reg round_up;
     reg [10:0] res_exp;
     reg [51:0] res_frac;
 
