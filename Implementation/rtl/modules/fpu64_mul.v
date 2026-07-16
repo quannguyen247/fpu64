@@ -75,9 +75,6 @@ module fpu64_mul (
     wire dp_zero1 = (dp_e1 == 11'd0) && (dp_f1 == 52'd0);
     wire dp_zero2 = (dp_e2 == 11'd0) && (dp_f2 == 52'd0);
 
-    // ==========================================
-    // STAGE 1: Unpack and Calculate Exponents
-    // ==========================================
     reg ex1_is_double;
     reg [2:0] ex1_rm;
 
@@ -177,9 +174,6 @@ module fpu64_mul (
         end
     end
 
-    // ==========================================
-    // STAGE 2: Multiplier (Mapped to DSP M-Reg)
-    // ==========================================
     reg ex2_is_double;
     reg [2:0] ex2_rm;
 
@@ -263,9 +257,6 @@ module fpu64_mul (
         end
     end
 
-    // ==========================================
-    // STAGE 3: Multiplier P-Reg / Normalization
-    // ==========================================
     reg ex3_is_double;
     reg [2:0] ex3_rm;
 
@@ -469,20 +460,23 @@ module fpu64_mul (
         end
     end
 
-    // ==========================================
-    // STAGE 4: Rounding and Pack
-    // ==========================================
     reg [64:0] ex6_res;
     reg [4:0] ex6_flags;
 
     reg [7:0] sp_res_exp;
     reg [22:0] sp_res_frac;
-    reg sp_guard, sp_round, sp_sticky, sp_round_up;
+    reg sp_guard;
+    reg sp_round;
+    reg sp_sticky;
+    reg sp_round_up;
     integer i_sp;
 
     reg [10:0] dp_res_exp;
     reg [51:0] dp_res_frac;
-    reg dp_guard, dp_round, dp_sticky, dp_round_up;
+    reg dp_guard;
+    reg dp_round;
+    reg dp_sticky;
+    reg dp_round_up;
     integer i_dp;
 
     reg [105:0] dp_prod_shifted;
@@ -510,8 +504,6 @@ module fpu64_mul (
                             ex6_flags[`FF_NX] <= 1'b1;
                         end else if ($signed(ex5_dp_exp) <= $signed(12'd0)) begin
                             dp_res_exp = 11'd0;
-                            // Right shift for subnormal
-                            // Max shift is ~54, cap it to avoid huge shifter.
                             if ($signed(ex5_dp_exp) < $signed(-12'd54)) begin
                                 dp_guard = 1'b0;
                                 dp_round = 1'b0;
