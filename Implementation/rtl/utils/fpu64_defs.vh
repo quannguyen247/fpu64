@@ -13,6 +13,10 @@
 `define F_CLASS  4'd9
 `define F_MVTX   4'd10
 `define F_MVXT   4'd11
+`define F_MADD   4'd12
+`define F_MSUB   4'd13
+`define F_NMSUB  4'd14
+`define F_NMADD  4'd15
 
 `define RM_RNE   3'b000
 `define RM_RTZ   3'b001
