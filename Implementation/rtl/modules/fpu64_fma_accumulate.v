@@ -357,14 +357,57 @@ module fpu64_fma_accumulate (
         end
     end
 
+    wire [20:0] group_nonzero;
+    genvar g;
+    generate
+        for (g = 0; g < 21; g = g + 1) begin : gen_group_nonzero
+            assign group_nonzero[g] = |stage2_sum[g*8 +: 8];
+        end
+    endgenerate
+
+    reg [4:0] coarse_index;
     always @(*) begin
-        leading_index = 8'd0;
-        leading_found = 1'b0;
-        for (leading_i = 0; leading_i < 168; leading_i = leading_i + 1) begin
-            if (!leading_found && stage2_sum[167 - leading_i]) begin
-                leading_index = 8'd167 - leading_i;
-                leading_found = 1'b1;
-            end
+        if      (group_nonzero[20]) coarse_index = 5'd20;
+        else if (group_nonzero[19]) coarse_index = 5'd19;
+        else if (group_nonzero[18]) coarse_index = 5'd18;
+        else if (group_nonzero[17]) coarse_index = 5'd17;
+        else if (group_nonzero[16]) coarse_index = 5'd16;
+        else if (group_nonzero[15]) coarse_index = 5'd15;
+        else if (group_nonzero[14]) coarse_index = 5'd14;
+        else if (group_nonzero[13]) coarse_index = 5'd13;
+        else if (group_nonzero[12]) coarse_index = 5'd12;
+        else if (group_nonzero[11]) coarse_index = 5'd11;
+        else if (group_nonzero[10]) coarse_index = 5'd10;
+        else if (group_nonzero[ 9]) coarse_index = 5'd9;
+        else if (group_nonzero[ 8]) coarse_index = 5'd8;
+        else if (group_nonzero[ 7]) coarse_index = 5'd7;
+        else if (group_nonzero[ 6]) coarse_index = 5'd6;
+        else if (group_nonzero[ 5]) coarse_index = 5'd5;
+        else if (group_nonzero[ 4]) coarse_index = 5'd4;
+        else if (group_nonzero[ 3]) coarse_index = 5'd3;
+        else if (group_nonzero[ 2]) coarse_index = 5'd2;
+        else if (group_nonzero[ 1]) coarse_index = 5'd1;
+        else                        coarse_index = 5'd0;
+    end
+
+    wire [7:0] fine_group = stage2_sum[coarse_index*8 +: 8];
+    reg [2:0] fine_index;
+    always @(*) begin
+        if      (fine_group[7]) fine_index = 3'd7;
+        else if (fine_group[6]) fine_index = 3'd6;
+        else if (fine_group[5]) fine_index = 3'd5;
+        else if (fine_group[4]) fine_index = 3'd4;
+        else if (fine_group[3]) fine_index = 3'd3;
+        else if (fine_group[2]) fine_index = 3'd2;
+        else if (fine_group[1]) fine_index = 3'd1;
+        else                    fine_index = 3'd0;
+    end
+
+    always @(*) begin
+        if (stage2_sum == 168'd0) begin
+            leading_index = 8'd0;
+        end else begin
+            leading_index = {coarse_index, fine_index};
         end
     end
 
