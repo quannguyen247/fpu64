@@ -16,8 +16,8 @@ module fpu64_sqrt (
     output reg valid_out,
     input wire ready_out,
 
-    output reg [63:0] result,
-    output reg [4:0] fflags
+    output wire [63:0] result,
+    output wire [4:0] fflags
 );
 
     localparam S_IDLE  = 2'd0;
@@ -58,26 +58,87 @@ module fpu64_sqrt (
 
     reg [63:0] res_reg;
     reg [4:0] flags_reg;
-    reg [11:0] init_exp;
 
     wire [57:0] test_val = {root, 2'b01};
     wire [57:0] next_rem = {rem[55:0], x_reg[111:110]};
     wire [57:0] sub_res = next_rem - test_val;
     wire can_sub = (next_rem >= test_val);
 
-    reg guard;
-    reg round;
-    reg sticky;
-    reg round_up;
-    reg [10:0] res_exp;
-    reg [51:0] res_frac;
+    // Initial values for DP
+    wire [11:0] dp_init_exp = {1'b0, dp_e1} - 12'd1023;
+    wire [11:0] dp_init_exp_adj = dp_init_exp[0] ? (dp_init_exp - 12'd1) : dp_init_exp;
+    wire [111:0] dp_x_reg_init = dp_init_exp[0] ? {1'b0, (dp_e1 == 11'd0) ? 1'b0 : 1'b1, dp_f1, 59'd0} : ({1'b0, (dp_e1 == 11'd0) ? 1'b0 : 1'b1, dp_f1, 58'd0} << 1);
+    wire [11:0] dp_exp_init = $unsigned($signed(dp_init_exp_adj) >>> 1) + 12'd1023;
+
+    // Initial values for SP
+    wire [11:0] sp_init_exp = {3'd0, sp_e1} - 12'd127;
+    wire [11:0] sp_init_exp_adj = sp_init_exp[0] ? (sp_init_exp - 12'd1) : sp_init_exp;
+    wire [111:0] sp_x_reg_init = sp_init_exp[0] ? {1'b0, (sp_e1 == 8'd0) ? 1'b0 : 1'b1, sp_f1, 88'd0} : ({1'b0, (sp_e1 == 8'd0) ? 1'b0 : 1'b1, sp_f1, 87'd0} << 1);
+    wire [11:0] sp_exp_init = $unsigned($signed(sp_init_exp_adj) >>> 1) + 12'd127;
+
+    // Combinational Rounding Logic
+    reg dp_guard;
+    reg dp_round;
+    reg dp_sticky;
+    reg dp_round_up;
+    reg [10:0] dp_res_exp;
+    reg [51:0] dp_res_frac;
+    reg [63:0] dp_final_res;
+    reg [4:0] dp_final_flags;
+
+    always @(*) begin
+        dp_res_exp = exp[10:0];
+        dp_guard = root[2];
+        dp_round = root[1];
+        dp_sticky = root[0] | (rem != 58'd0);
+        dp_round_up = 1'b0;
+        dp_final_flags = 5'd0;
+        case (rm_reg)
+            `RM_RNE: dp_round_up = dp_guard && (dp_round || dp_sticky || root[3]);
+            `RM_RTZ: dp_round_up = 1'b0;
+            `RM_RDN: dp_round_up = 1'b0;
+            `RM_RUP: dp_round_up = (dp_guard || dp_round || dp_sticky);
+            `RM_RMM: dp_round_up = dp_guard;
+            default: dp_round_up = 1'b0;
+        endcase
+        dp_res_frac = root[54:3] + (dp_round_up ? 52'd1 : 52'd0);
+        dp_final_res = {1'b0, dp_res_exp, dp_res_frac};
+        if (dp_guard || dp_round || dp_sticky) dp_final_flags[`FF_NX] = 1'b1;
+    end
+
+    reg sp_guard;
+    reg sp_round;
+    reg sp_sticky;
+    reg sp_round_up;
+    reg [7:0] sp_res_exp;
+    reg [22:0] sp_res_frac;
+    reg [63:0] sp_final_res;
+    reg [4:0] sp_final_flags;
+
+    always @(*) begin
+        sp_res_exp = exp[7:0];
+        sp_guard = root[2];
+        sp_round = root[1];
+        sp_sticky = root[0] | (rem != 58'd0);
+        sp_round_up = 1'b0;
+        sp_final_flags = 5'd0;
+        case (rm_reg)
+            `RM_RNE: sp_round_up = sp_guard && (sp_round || sp_sticky || root[3]);
+            `RM_RTZ: sp_round_up = 1'b0;
+            `RM_RDN: sp_round_up = 1'b0;
+            `RM_RUP: sp_round_up = (sp_guard || sp_round || sp_sticky);
+            `RM_RMM: sp_round_up = sp_guard;
+            default: sp_round_up = 1'b0;
+        endcase
+        sp_res_frac = root[25:3] + (sp_round_up ? 23'd1 : 23'd0);
+        sp_final_res = {32'hFFFFFFFF, 1'b0, sp_res_exp, sp_res_frac};
+        if (sp_guard || sp_round || sp_sticky) sp_final_flags[`FF_NX] = 1'b1;
+    end
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             state <= S_IDLE;
             valid_out <= 1'b0;
-            result <= 64'd0;
-            fflags <= 5'd0;
 
             is_dbl_reg <= 1'b0;
             rm_reg <= 3'd0;
@@ -88,13 +149,6 @@ module fpu64_sqrt (
             exp <= 12'd0;
             res_reg <= 64'd0;
             flags_reg <= 5'd0;
-
-            guard <= 1'b0;
-            round <= 1'b0;
-            sticky <= 1'b0;
-            round_up <= 1'b0;
-            res_exp <= 11'd0;
-            res_frac <= 52'd0;
         end else begin
             case (state)
                 S_IDLE: begin
@@ -121,14 +175,8 @@ module fpu64_sqrt (
                                 res_reg <= {1'b0, 11'h7FF, 52'd0};
                                 state <= S_DONE;
                             end else begin
-                                init_exp = {1'b0, dp_e1} - 12'd1023;
-                                if (init_exp[0]) begin
-                                    x_reg <= {1'b0, (dp_e1 == 11'd0) ? 1'b0 : 1'b1, dp_f1, 59'd0};
-                                    init_exp = init_exp - 12'd1;
-                                end else begin
-                                    x_reg <= {1'b0, (dp_e1 == 11'd0) ? 1'b0 : 1'b1, dp_f1, 58'd0} << 1;
-                                end
-                                exp <= $unsigned($signed(init_exp) >>> 1) + 12'd1023;
+                                x_reg <= dp_x_reg_init;
+                                exp <= dp_exp_init;
                                 root <= 57'd0;
                                 rem <= 58'd0;
                                 count <= 6'd56;
@@ -150,14 +198,8 @@ module fpu64_sqrt (
                                 res_reg <= {32'hFFFFFFFF, 1'b0, 8'hFF, 23'd0};
                                 state <= S_DONE;
                             end else begin
-                                init_exp = {3'd0, sp_e1} - 12'd127;
-                                if (init_exp[0]) begin
-                                    x_reg <= {1'b0, (sp_e1 == 8'd0) ? 1'b0 : 1'b1, sp_f1, 88'd0};
-                                    init_exp = init_exp - 12'd1;
-                                end else begin
-                                    x_reg <= {1'b0, (sp_e1 == 8'd0) ? 1'b0 : 1'b1, sp_f1, 87'd0} << 1;
-                                end
-                                exp <= $unsigned($signed(init_exp) >>> 1) + 12'd127;
+                                x_reg <= sp_x_reg_init;
+                                exp <= sp_exp_init;
                                 root <= 57'd0;
                                 rem <= 58'd0;
                                 count <= 6'd27;
@@ -185,47 +227,17 @@ module fpu64_sqrt (
 
                 S_ROUND: begin
                     if (is_dbl_reg) begin
-                        res_exp = exp[10:0];
-                        guard = root[2];
-                        round = root[1];
-                        sticky = root[0] | (rem != 58'd0);
-                        round_up = 1'b0;
-                        case (rm_reg)
-                            `RM_RNE: round_up = guard && (round || sticky || root[3]);
-                            `RM_RTZ: round_up = 1'b0;
-                            `RM_RDN: round_up = 1'b0;
-                            `RM_RUP: round_up = (guard || round || sticky);
-                            `RM_RMM: round_up = guard;
-                            default: round_up = 1'b0;
-                        endcase
-                        res_frac = root[54:3] + (round_up ? 52'd1 : 52'd0);
-                        res_reg <= {1'b0, res_exp, res_frac};
-                        if (guard || round || sticky) flags_reg[`FF_NX] <= 1'b1;
+                        res_reg <= dp_final_res;
+                        flags_reg <= dp_final_flags;
                     end else begin
-                        res_exp = exp[10:0];
-                        guard = root[2];
-                        round = root[1];
-                        sticky = root[0] | (rem != 58'd0);
-                        round_up = 1'b0;
-                        case (rm_reg)
-                            `RM_RNE: round_up = guard && (round || sticky || root[3]);
-                            `RM_RTZ: round_up = 1'b0;
-                            `RM_RDN: round_up = 1'b0;
-                            `RM_RUP: round_up = (guard || round || sticky);
-                            `RM_RMM: round_up = guard;
-                            default: round_up = 1'b0;
-                        endcase
-                        res_frac = {29'd0, root[25:3]} + (round_up ? 52'd1 : 52'd0);
-                        res_reg <= {32'hFFFFFFFF, 1'b0, res_exp[7:0], res_frac[22:0]};
-                        if (guard || round || sticky) flags_reg[`FF_NX] <= 1'b1;
+                        res_reg <= sp_final_res;
+                        flags_reg <= sp_final_flags;
                     end
                     state <= S_DONE;
                 end
 
                 S_DONE: begin
                     valid_out <= 1'b1;
-                    result <= res_reg;
-                    fflags <= flags_reg;
                     if (ready_out && valid_out) begin
                         valid_out <= 1'b0;
                         state <= S_IDLE;
@@ -234,5 +246,8 @@ module fpu64_sqrt (
             endcase
         end
     end
+
+    assign result = res_reg;
+    assign fflags = flags_reg;
 
 endmodule
