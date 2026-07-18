@@ -23,8 +23,22 @@ module fpu64_fma_round (
     wire stall_stage3 = valid_out && !ready_out;
     wire stall_stage2;
     wire stall_stage1;
+    wire stall_stage0;
+    reg valid_stage0;
     reg valid_stage1;
     reg valid_stage2;
+    
+    reg stage0_is_double;
+    reg [2:0] stage0_rm;
+    reg stage0_special;
+    reg [63:0] stage0_special_result;
+    reg [4:0] stage0_special_flags;
+    reg stage0_result_sign;
+    reg [167:0] stage0_norm;
+    reg stage0_subnormal;
+    reg [13:0] stage0_subnormal_shift;
+    reg signed [13:0] stage0_rounded_exp;
+
     reg stage1_is_double;
     reg [2:0] stage1_rm;
     reg stage1_special;
@@ -91,25 +105,60 @@ module fpu64_fma_round (
 
     assign stall_stage2 = valid_stage2 && stall_stage3;
     assign stall_stage1 = valid_stage1 && stall_stage2;
-    assign ready_in = !stall_stage1;
+    assign stall_stage0 = valid_stage0 && stall_stage1;
+    assign ready_in = !stall_stage0;
 
     always @(*) begin
-        round_vector_next = norm_in;
         subnormal_shift = 14'd0;
         rounded_exp_next = result_exp_in;
         subnormal_next = 1'b0;
         if (!special_in && norm_in != 168'd0) begin
             if (is_double_in && $signed(result_exp_in) < -14'sd1022) begin
                 subnormal_shift = -14'sd1022 - result_exp_in;
-                round_vector_next = shift_right_jam(norm_in, subnormal_shift);
                 rounded_exp_next = -14'sd1022;
                 subnormal_next = 1'b1;
             end else if (!is_double_in && $signed(result_exp_in) < -14'sd126) begin
                 subnormal_shift = -14'sd126 - result_exp_in;
-                round_vector_next = shift_right_jam(norm_in, subnormal_shift);
                 rounded_exp_next = -14'sd126;
                 subnormal_next = 1'b1;
             end
+        end
+    end
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            valid_stage0 <= 1'b0;
+            stage0_is_double <= 1'b0;
+            stage0_rm <= 3'd0;
+            stage0_special <= 1'b0;
+            stage0_special_result <= 64'd0;
+            stage0_special_flags <= 5'd0;
+            stage0_result_sign <= 1'b0;
+            stage0_norm <= 168'd0;
+            stage0_subnormal <= 1'b0;
+            stage0_subnormal_shift <= 14'd0;
+            stage0_rounded_exp <= 14'sd0;
+        end else if (!stall_stage0) begin
+            valid_stage0 <= valid_in;
+            if (valid_in) begin
+                stage0_is_double <= is_double_in;
+                stage0_rm <= rm_in;
+                stage0_special <= special_in;
+                stage0_special_result <= special_result_in;
+                stage0_special_flags <= special_flags_in;
+                stage0_result_sign <= result_sign_in;
+                stage0_norm <= norm_in;
+                stage0_subnormal <= subnormal_next;
+                stage0_subnormal_shift <= subnormal_shift;
+                stage0_rounded_exp <= rounded_exp_next;
+            end
+        end
+    end
+
+    always @(*) begin
+        round_vector_next = stage0_norm;
+        if (stage0_subnormal) begin
+            round_vector_next = shift_right_jam(stage0_norm, stage0_subnormal_shift);
         end
     end
 
@@ -126,16 +175,16 @@ module fpu64_fma_round (
             stage1_rounded_exp <= 14'sd0;
             stage1_round_vector <= 168'd0;
         end else if (!stall_stage1) begin
-            valid_stage1 <= valid_in;
-            if (valid_in) begin
-                stage1_is_double <= is_double_in;
-                stage1_rm <= rm_in;
-                stage1_special <= special_in;
-                stage1_special_result <= special_result_in;
-                stage1_special_flags <= special_flags_in;
-                stage1_result_sign <= result_sign_in;
-                stage1_subnormal <= subnormal_next;
-                stage1_rounded_exp <= rounded_exp_next;
+            valid_stage1 <= valid_stage0;
+            if (valid_stage0) begin
+                stage1_is_double <= stage0_is_double;
+                stage1_rm <= stage0_rm;
+                stage1_special <= stage0_special;
+                stage1_special_result <= stage0_special_result;
+                stage1_special_flags <= stage0_special_flags;
+                stage1_result_sign <= stage0_result_sign;
+                stage1_subnormal <= stage0_subnormal;
+                stage1_rounded_exp <= stage0_rounded_exp;
                 stage1_round_vector <= round_vector_next;
             end
         end
