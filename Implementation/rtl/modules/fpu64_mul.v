@@ -125,51 +125,83 @@ module fpu64_mul (
                 ex1_sp_special_res <= 64'd0;
                 ex1_sp_special_flags <= 5'd0;
                 ex1_sp_res_sign <= sp_s1 ^ sp_s2;
+                ex1_sp_m1 <= {(sp_e1 != 8'd0), sp_f1};
+                ex1_sp_m2 <= {(sp_e2 != 8'd0), sp_f2};
 
-                if (sp_nan1 || sp_nan2) begin
+                if (sp_e1 == 8'd0 && sp_f1 == 23'd0)
+                    ex1_sp_exp <= 9'd0 + 9'd1 - 9'd127;
+                else
+                    ex1_sp_exp <= {1'b0, sp_e1} - 9'd127;
+
+                if (sp_e2 == 8'd0 && sp_f2 == 23'd0)
+                    ex1_sp_exp <= ex1_sp_exp;
+                else
+                    ex1_sp_exp <= ({1'b0, sp_e1} - 9'd127) + ({1'b0, sp_e2} - 9'd127) + 9'd127;
+
+                if (sp_snan1 || sp_snan2) begin
                     ex1_sp_special <= 1'b1;
-                    ex1_sp_special_res <= 64'hFFFFFFFF_7FC00000;
-                    if (sp_snan1 || sp_snan2) ex1_sp_special_flags[`FF_NV] <= 1'b1;
-                end else if ((sp_inf1 && sp_zero2) || (sp_zero1 && sp_inf2)) begin
+                    ex1_sp_special_flags <= 5'b10000;
+                    if (sp_snan1) ex1_sp_special_res <= {32'hFFFFFFFF, rs1[31:0] | 32'h00400000};
+                    else ex1_sp_special_res <= {32'hFFFFFFFF, rs2[31:0] | 32'h00400000};
+                end else if (sp_nan1) begin
                     ex1_sp_special <= 1'b1;
-                    ex1_sp_special_res <= 64'hFFFFFFFF_7FC00000;
-                    ex1_sp_special_flags[`FF_NV] <= 1'b1;
+                    ex1_sp_special_res <= {32'hFFFFFFFF, rs1[31:0]};
+                end else if (sp_nan2) begin
+                    ex1_sp_special <= 1'b1;
+                    ex1_sp_special_res <= {32'hFFFFFFFF, rs2[31:0]};
                 end else if (sp_inf1 || sp_inf2) begin
                     ex1_sp_special <= 1'b1;
-                    ex1_sp_special_res <= {32'hFFFFFFFF, sp_s1 ^ sp_s2, 8'hFF, 23'd0};
+                    if ((sp_inf1 && sp_zero2) || (sp_inf2 && sp_zero1)) begin
+                        ex1_sp_special_res <= {32'hFFFFFFFF, 32'h7FC00000};
+                        ex1_sp_special_flags <= 5'b10000;
+                    end else begin
+                        ex1_sp_special_res <= {32'hFFFFFFFF, (sp_s1 ^ sp_s2), 8'hFF, 23'd0};
+                    end
                 end else if (sp_zero1 || sp_zero2) begin
                     ex1_sp_special <= 1'b1;
-                    ex1_sp_special_res <= {32'hFFFFFFFF, sp_s1 ^ sp_s2, 8'd0, 23'd0};
+                    ex1_sp_special_res <= {32'hFFFFFFFF, (sp_s1 ^ sp_s2), 31'd0};
                 end
-
-                ex1_sp_exp <= {1'b0, sp_e1} + {1'b0, sp_e2} - 9'd127;
-                ex1_sp_m1 <= {(sp_e1 == 8'd0) ? 1'b0 : 1'b1, sp_f1};
-                ex1_sp_m2 <= {(sp_e2 == 8'd0) ? 1'b0 : 1'b1, sp_f2};
 
                 ex1_dp_special <= 1'b0;
                 ex1_dp_special_res <= 64'd0;
                 ex1_dp_special_flags <= 5'd0;
                 ex1_dp_res_sign <= dp_s1 ^ dp_s2;
+                ex1_dp_m1 <= {(dp_e1 != 11'd0), dp_f1};
+                ex1_dp_m2 <= {(dp_e2 != 11'd0), dp_f2};
 
-                if (dp_nan1 || dp_nan2) begin
+                if (dp_e1 == 11'd0 && dp_f1 == 52'd0)
+                    ex1_dp_exp <= 12'd0 + 12'd1 - 12'd1023;
+                else
+                    ex1_dp_exp <= {1'b0, dp_e1} - 12'd1023;
+
+                if (dp_e2 == 11'd0 && dp_f2 == 52'd0)
+                    ex1_dp_exp <= ex1_dp_exp;
+                else
+                    ex1_dp_exp <= ({1'b0, dp_e1} - 12'd1023) + ({1'b0, dp_e2} - 12'd1023) + 12'd1023;
+
+                if (dp_snan1 || dp_snan2) begin
                     ex1_dp_special <= 1'b1;
-                    ex1_dp_special_res <= 64'h7FF8000000000000;
-                    if (dp_snan1 || dp_snan2) ex1_dp_special_flags[`FF_NV] <= 1'b1;
-                end else if ((dp_inf1 && dp_zero2) || (dp_zero1 && dp_inf2)) begin
+                    ex1_dp_special_flags <= 5'b10000;
+                    if (dp_snan1) ex1_dp_special_res <= rs1 | 64'h0008000000000000;
+                    else ex1_dp_special_res <= rs2 | 64'h0008000000000000;
+                end else if (dp_nan1) begin
                     ex1_dp_special <= 1'b1;
-                    ex1_dp_special_res <= 64'h7FF8000000000000;
-                    ex1_dp_special_flags[`FF_NV] <= 1'b1;
+                    ex1_dp_special_res <= rs1;
+                end else if (dp_nan2) begin
+                    ex1_dp_special <= 1'b1;
+                    ex1_dp_special_res <= rs2;
                 end else if (dp_inf1 || dp_inf2) begin
                     ex1_dp_special <= 1'b1;
-                    ex1_dp_special_res <= {dp_s1 ^ dp_s2, 11'h7FF, 52'd0};
+                    if ((dp_inf1 && dp_zero2) || (dp_inf2 && dp_zero1)) begin
+                        ex1_dp_special_res <= 64'h7FF8000000000000;
+                        ex1_dp_special_flags <= 5'b10000;
+                    end else begin
+                        ex1_dp_special_res <= {(dp_s1 ^ dp_s2), 11'h7FF, 52'd0};
+                    end
                 end else if (dp_zero1 || dp_zero2) begin
                     ex1_dp_special <= 1'b1;
-                    ex1_dp_special_res <= {dp_s1 ^ dp_s2, 11'd0, 52'd0};
+                    ex1_dp_special_res <= {(dp_s1 ^ dp_s2), 63'd0};
                 end
-
-                ex1_dp_exp <= {1'b0, dp_e1} + {1'b0, dp_e2} - 12'd1023;
-                ex1_dp_m1 <= {(dp_e1 == 11'd0) ? 1'b0 : 1'b1, dp_f1};
-                ex1_dp_m2 <= {(dp_e2 == 11'd0) ? 1'b0 : 1'b1, dp_f2};
             end
         end
     end
@@ -328,6 +360,7 @@ module fpu64_mul (
         end
     end
 
+    // ex4: final product sum + 1-bit normalization (merged from old ex4+ex5)
     reg ex4_is_double;
     reg [2:0] ex4_rm;
 
@@ -336,14 +369,20 @@ module fpu64_mul (
     reg [4:0] ex4_sp_special_flags;
     reg ex4_sp_res_sign;
     reg [8:0] ex4_sp_exp;
-    reg [47:0] ex4_sp_prod;
+    reg [47:0] ex4_sp_prod_norm;
 
     reg ex4_dp_special;
     reg [63:0] ex4_dp_special_res;
     reg [4:0] ex4_dp_special_flags;
     reg ex4_dp_res_sign;
     reg [11:0] ex4_dp_exp;
-    reg [105:0] ex4_dp_prod;
+    reg [105:0] ex4_dp_prod_norm;
+
+    wire [105:0] ex3_dp_prod_sum = {{70{1'b0}}, ex3_dp_d0} +
+                                   {{51{1'b0}}, ex3_dp_d1, 18'd0} +
+                                   {{32{1'b0}}, ex3_dp_d2, 36'd0} +
+                                   {{16{1'b0}}, ex3_dp_d3, 54'd0} +
+                                   {ex3_dp_d4, 72'd0};
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -356,14 +395,14 @@ module fpu64_mul (
             ex4_sp_special_flags <= 5'd0;
             ex4_sp_res_sign <= 1'b0;
             ex4_sp_exp <= 9'd0;
-            ex4_sp_prod <= 48'd0;
+            ex4_sp_prod_norm <= 48'd0;
 
             ex4_dp_special <= 1'b0;
             ex4_dp_special_res <= 64'd0;
             ex4_dp_special_flags <= 5'd0;
             ex4_dp_res_sign <= 1'b0;
             ex4_dp_exp <= 12'd0;
-            ex4_dp_prod <= 106'd0;
+            ex4_dp_prod_norm <= 106'd0;
         end else if (!stall_ex4) begin
             valid_ex4 <= valid_ex3;
             if (valid_ex3) begin
@@ -374,91 +413,55 @@ module fpu64_mul (
                 ex4_sp_special_res <= ex3_sp_special_res;
                 ex4_sp_special_flags <= ex3_sp_special_flags;
                 ex4_sp_res_sign <= ex3_sp_res_sign;
-                ex4_sp_exp <= ex3_sp_exp;
-                ex4_sp_prod <= ex3_sp_prod;
+                if (ex3_sp_prod[47]) begin
+                    ex4_sp_prod_norm <= ex3_sp_prod;
+                    ex4_sp_exp <= ex3_sp_exp + 9'd1;
+                end else begin
+                    ex4_sp_prod_norm <= ex3_sp_prod << 1;
+                    ex4_sp_exp <= ex3_sp_exp;
+                end
 
                 ex4_dp_special <= ex3_dp_special;
                 ex4_dp_special_res <= ex3_dp_special_res;
                 ex4_dp_special_flags <= ex3_dp_special_flags;
                 ex4_dp_res_sign <= ex3_dp_res_sign;
-                ex4_dp_exp <= ex3_dp_exp;
-                ex4_dp_prod <= {{70{1'b0}}, ex3_dp_d0} +
-                               {{51{1'b0}}, ex3_dp_d1, 18'd0} +
-                               {{32{1'b0}}, ex3_dp_d2, 36'd0} +
-                               {{16{1'b0}}, ex3_dp_d3, 54'd0} +
-                               {ex3_dp_d4, 72'd0};
+                if (ex3_dp_prod_sum[105]) begin
+                    ex4_dp_prod_norm <= ex3_dp_prod_sum;
+                    ex4_dp_exp <= ex3_dp_exp + 12'd1;
+                end else begin
+                    ex4_dp_prod_norm <= ex3_dp_prod_sum << 1;
+                    ex4_dp_exp <= ex3_dp_exp;
+                end
             end
         end
     end
 
+    // ex5: subnormal detect + shift + GRS extract + round decision
     reg ex5_is_double;
     reg [2:0] ex5_rm;
-
-    reg ex5_sp_special;
-    reg [63:0] ex5_sp_special_res;
-    reg [4:0] ex5_sp_special_flags;
-    reg ex5_sp_res_sign;
-    reg [8:0] ex5_sp_exp;
-    reg [47:0] ex5_sp_prod_norm;
 
     reg ex5_dp_special;
     reg [63:0] ex5_dp_special_res;
     reg [4:0] ex5_dp_special_flags;
+    reg ex5_sp_special;
+    reg [63:0] ex5_sp_special_res;
+    reg [4:0] ex5_sp_special_flags;
+
     reg ex5_dp_res_sign;
-    reg [11:0] ex5_dp_exp;
-    reg [105:0] ex5_dp_prod_norm;
+    reg [10:0] ex5_dp_res_exp;
+    reg [51:0] ex5_dp_res_frac;
+    reg ex5_dp_round_up;
+    reg ex5_dp_inexact;
+    reg ex5_dp_overflow;
+    reg ex5_dp_underflow;
 
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            valid_ex5 <= 1'b0;
-            ex5_is_double <= 1'b0;
-            ex5_rm <= 3'd0;
-
-            ex5_sp_special <= 1'b0;
-            ex5_sp_special_res <= 64'd0;
-            ex5_sp_special_flags <= 5'd0;
-            ex5_sp_res_sign <= 1'b0;
-            ex5_sp_exp <= 9'd0;
-            ex5_sp_prod_norm <= 48'd0;
-
-            ex5_dp_special <= 1'b0;
-            ex5_dp_special_res <= 64'd0;
-            ex5_dp_special_flags <= 5'd0;
-            ex5_dp_res_sign <= 1'b0;
-            ex5_dp_exp <= 12'd0;
-            ex5_dp_prod_norm <= 106'd0;
-        end else if (!stall_ex5) begin
-            valid_ex5 <= valid_ex4;
-            if (valid_ex4) begin
-                ex5_is_double <= ex4_is_double;
-                ex5_rm <= ex4_rm;
-
-                ex5_sp_special <= ex4_sp_special;
-                ex5_sp_special_res <= ex4_sp_special_res;
-                ex5_sp_special_flags <= ex4_sp_special_flags;
-                ex5_sp_res_sign <= ex4_sp_res_sign;
-                if (ex4_sp_prod[47]) begin
-                    ex5_sp_prod_norm <= ex4_sp_prod;
-                    ex5_sp_exp <= ex4_sp_exp + 9'd1;
-                end else begin
-                    ex5_sp_prod_norm <= ex4_sp_prod << 1;
-                    ex5_sp_exp <= ex4_sp_exp;
-                end
-
-                ex5_dp_special <= ex4_dp_special;
-                ex5_dp_special_res <= ex4_dp_special_res;
-                ex5_dp_special_flags <= ex4_dp_special_flags;
-                ex5_dp_res_sign <= ex4_dp_res_sign;
-                if (ex4_dp_prod[105]) begin
-                    ex5_dp_prod_norm <= ex4_dp_prod;
-                    ex5_dp_exp <= ex4_dp_exp + 12'd1;
-                end else begin
-                    ex5_dp_prod_norm <= ex4_dp_prod << 1;
-                    ex5_dp_exp <= ex4_dp_exp;
-                end
-            end
-        end
-    end
+    reg ex5_sp_res_sign;
+    reg [7:0] ex5_sp_res_exp;
+    reg [22:0] ex5_sp_res_frac;
+    reg ex5_sp_round_up;
+    reg ex5_sp_inexact;
+    reg ex5_sp_overflow;
+    reg ex5_sp_underflow;
 
     reg [64:0] ex6_res;
     reg [4:0] ex6_flags;
@@ -484,6 +487,200 @@ module fpu64_mul (
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
+            valid_ex5 <= 1'b0;
+            ex5_is_double <= 1'b0;
+            ex5_rm <= 3'd0;
+
+            ex5_dp_special <= 1'b0;
+            ex5_dp_special_res <= 64'd0;
+            ex5_dp_special_flags <= 5'd0;
+            ex5_sp_special <= 1'b0;
+            ex5_sp_special_res <= 64'd0;
+            ex5_sp_special_flags <= 5'd0;
+
+            ex5_dp_res_sign <= 1'b0;
+            ex5_dp_res_exp <= 11'd0;
+            ex5_dp_res_frac <= 52'd0;
+            ex5_dp_round_up <= 1'b0;
+            ex5_dp_inexact <= 1'b0;
+            ex5_dp_overflow <= 1'b0;
+            ex5_dp_underflow <= 1'b0;
+
+            ex5_sp_res_sign <= 1'b0;
+            ex5_sp_res_exp <= 8'd0;
+            ex5_sp_res_frac <= 23'd0;
+            ex5_sp_round_up <= 1'b0;
+            ex5_sp_inexact <= 1'b0;
+            ex5_sp_overflow <= 1'b0;
+            ex5_sp_underflow <= 1'b0;
+        end else if (!stall_ex5) begin
+            valid_ex5 <= valid_ex4;
+            if (valid_ex4) begin
+                ex5_is_double <= ex4_is_double;
+                ex5_rm <= ex4_rm;
+
+                ex5_dp_special <= ex4_dp_special;
+                ex5_dp_special_res <= ex4_dp_special_res;
+                ex5_dp_special_flags <= ex4_dp_special_flags;
+                ex5_sp_special <= ex4_sp_special;
+                ex5_sp_special_res <= ex4_sp_special_res;
+                ex5_sp_special_flags <= ex4_sp_special_flags;
+
+                ex5_dp_res_sign <= ex4_dp_res_sign;
+                ex5_sp_res_sign <= ex4_sp_res_sign;
+
+                ex5_dp_overflow <= 1'b0;
+                ex5_dp_underflow <= 1'b0;
+                ex5_dp_inexact <= 1'b0;
+                ex5_dp_res_exp <= 11'd0;
+                ex5_dp_res_frac <= 52'd0;
+                ex5_dp_round_up <= 1'b0;
+
+                ex5_sp_overflow <= 1'b0;
+                ex5_sp_underflow <= 1'b0;
+                ex5_sp_inexact <= 1'b0;
+                ex5_sp_res_exp <= 8'd0;
+                ex5_sp_res_frac <= 23'd0;
+                ex5_sp_round_up <= 1'b0;
+
+                if (ex4_is_double) begin
+                    if (!ex4_dp_special) begin
+                        if ($signed(ex4_dp_exp) >= $signed(12'd2047)) begin
+                            ex5_dp_overflow <= 1'b1;
+                            ex5_dp_inexact <= 1'b1;
+                        end else if ($signed(ex4_dp_exp) <= $signed(12'd0)) begin
+                            dp_res_exp = 11'd0;
+                            if ($signed(ex4_dp_exp) < $signed(-12'd54)) begin
+                                dp_guard = 1'b0;
+                                dp_round = 1'b0;
+                                dp_sticky = (ex4_dp_prod_norm != 0);
+                                dp_res_frac = 52'd0;
+                            end else begin
+                                dp_prod_shifted = ex4_dp_prod_norm >> (12'd1 - ex4_dp_exp);
+                                dp_guard = dp_prod_shifted[52];
+                                dp_round = dp_prod_shifted[51];
+                                dp_sticky = 1'b0;
+                                for (i_dp = 0; i_dp < 51; i_dp = i_dp + 1) begin
+                                    if (dp_prod_shifted[i_dp]) dp_sticky = 1'b1;
+                                end
+                                dp_res_frac = dp_prod_shifted[104:53];
+                            end
+
+                            dp_round_up = 1'b0;
+                            case (ex4_rm)
+                                `RM_RNE: dp_round_up = dp_guard && (dp_round || dp_sticky || dp_res_frac[0]);
+                                `RM_RTZ: dp_round_up = 1'b0;
+                                `RM_RDN: dp_round_up = ex4_dp_res_sign && (dp_guard || dp_round || dp_sticky);
+                                `RM_RUP: dp_round_up = !ex4_dp_res_sign && (dp_guard || dp_round || dp_sticky);
+                                `RM_RMM: dp_round_up = dp_guard;
+                                default: dp_round_up = 1'b0;
+                            endcase
+
+                            ex5_dp_res_exp <= dp_res_exp;
+                            ex5_dp_res_frac <= dp_res_frac;
+                            ex5_dp_round_up <= dp_round_up;
+                            if (dp_guard || dp_round || dp_sticky) begin
+                                ex5_dp_underflow <= 1'b1;
+                                ex5_dp_inexact <= 1'b1;
+                            end
+                        end else begin
+                            dp_res_exp = ex4_dp_exp[10:0];
+                            dp_guard = ex4_dp_prod_norm[52];
+                            dp_round = ex4_dp_prod_norm[51];
+                            dp_sticky = 1'b0;
+                            for (i_dp = 0; i_dp < 51; i_dp = i_dp + 1) begin
+                                if (ex4_dp_prod_norm[i_dp]) dp_sticky = 1'b1;
+                            end
+
+                            dp_round_up = 1'b0;
+                            case (ex4_rm)
+                                `RM_RNE: dp_round_up = dp_guard && (dp_round || dp_sticky || ex4_dp_prod_norm[53]);
+                                `RM_RTZ: dp_round_up = 1'b0;
+                                `RM_RDN: dp_round_up = ex4_dp_res_sign && (dp_guard || dp_round || dp_sticky);
+                                `RM_RUP: dp_round_up = !ex4_dp_res_sign && (dp_guard || dp_round || dp_sticky);
+                                `RM_RMM: dp_round_up = dp_guard;
+                                default: dp_round_up = 1'b0;
+                            endcase
+
+                            ex5_dp_res_exp <= dp_res_exp;
+                            ex5_dp_res_frac <= ex4_dp_prod_norm[104:53];
+                            ex5_dp_round_up <= dp_round_up;
+                            if (dp_guard || dp_round || dp_sticky) ex5_dp_inexact <= 1'b1;
+                        end
+                    end
+                end else begin
+                    if (!ex4_sp_special) begin
+                        if ($signed(ex4_sp_exp) >= $signed(9'd255)) begin
+                            ex5_sp_overflow <= 1'b1;
+                            ex5_sp_inexact <= 1'b1;
+                        end else if ($signed(ex4_sp_exp) <= $signed(9'd0)) begin
+                            sp_res_exp = 8'd0;
+                            if ($signed(ex4_sp_exp) < $signed(-9'd25)) begin
+                                sp_guard = 1'b0;
+                                sp_round = 1'b0;
+                                sp_sticky = (ex4_sp_prod_norm != 0);
+                                sp_res_frac = 23'd0;
+                            end else begin
+                                sp_prod_shifted = ex4_sp_prod_norm >> (9'd1 - ex4_sp_exp);
+                                sp_guard = sp_prod_shifted[23];
+                                sp_round = sp_prod_shifted[22];
+                                sp_sticky = 1'b0;
+                                for (i_sp = 0; i_sp < 22; i_sp = i_sp + 1) begin
+                                    if (sp_prod_shifted[i_sp]) sp_sticky = 1'b1;
+                                end
+                                sp_res_frac = sp_prod_shifted[46:24];
+                            end
+
+                            sp_round_up = 1'b0;
+                            case (ex4_rm)
+                                `RM_RNE: sp_round_up = sp_guard && (sp_round || sp_sticky || sp_res_frac[0]);
+                                `RM_RTZ: sp_round_up = 1'b0;
+                                `RM_RDN: sp_round_up = ex4_sp_res_sign && (sp_guard || sp_round || sp_sticky);
+                                `RM_RUP: sp_round_up = !ex4_sp_res_sign && (sp_guard || sp_round || sp_sticky);
+                                `RM_RMM: sp_round_up = sp_guard;
+                                default: sp_round_up = 1'b0;
+                            endcase
+
+                            ex5_sp_res_exp <= sp_res_exp;
+                            ex5_sp_res_frac <= sp_res_frac;
+                            ex5_sp_round_up <= sp_round_up;
+                            if (sp_guard || sp_round || sp_sticky) begin
+                                ex5_sp_underflow <= 1'b1;
+                                ex5_sp_inexact <= 1'b1;
+                            end
+                        end else begin
+                            sp_res_exp = ex4_sp_exp[7:0];
+                            sp_guard = ex4_sp_prod_norm[23];
+                            sp_round = ex4_sp_prod_norm[22];
+                            sp_sticky = 1'b0;
+                            for (i_sp = 0; i_sp < 22; i_sp = i_sp + 1) begin
+                                if (ex4_sp_prod_norm[i_sp]) sp_sticky = 1'b1;
+                            end
+
+                            sp_round_up = 1'b0;
+                            case (ex4_rm)
+                                `RM_RNE: sp_round_up = sp_guard && (sp_round || sp_sticky || ex4_sp_prod_norm[24]);
+                                `RM_RTZ: sp_round_up = 1'b0;
+                                `RM_RDN: sp_round_up = ex4_sp_res_sign && (sp_guard || sp_round || sp_sticky);
+                                `RM_RUP: sp_round_up = !ex4_sp_res_sign && (sp_guard || sp_round || sp_sticky);
+                                `RM_RMM: sp_round_up = sp_guard;
+                                default: sp_round_up = 1'b0;
+                            endcase
+
+                            ex5_sp_res_exp <= sp_res_exp;
+                            ex5_sp_res_frac <= ex4_sp_prod_norm[46:24];
+                            ex5_sp_round_up <= sp_round_up;
+                            if (sp_guard || sp_round || sp_sticky) ex5_sp_inexact <= 1'b1;
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    // ex6: significand increment + overflow check + result assembly
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
             valid_ex6 <= 1'b0;
             ex6_res <= 65'd0;
             ex6_flags <= 5'd0;
@@ -497,153 +694,49 @@ module fpu64_mul (
                     if (ex5_dp_special) begin
                         ex6_res <= ex5_dp_special_res;
                         ex6_flags <= ex5_dp_special_flags;
+                    end else if (ex5_dp_overflow) begin
+                        ex6_res <= {ex5_dp_res_sign, 11'h7FF, 52'd0};
+                        ex6_flags[`FF_OF] <= 1'b1;
+                        ex6_flags[`FF_NX] <= 1'b1;
                     end else begin
-                        if ($signed(ex5_dp_exp) >= $signed(12'd2047)) begin
-                            ex6_res <= {ex5_dp_res_sign, 11'h7FF, 52'd0};
-                            ex6_flags[`FF_OF] <= 1'b1;
-                            ex6_flags[`FF_NX] <= 1'b1;
-                        end else if ($signed(ex5_dp_exp) <= $signed(12'd0)) begin
-                            dp_res_exp = 11'd0;
-                            if ($signed(ex5_dp_exp) < $signed(-12'd54)) begin
-                                dp_guard = 1'b0;
-                                dp_round = 1'b0;
-                                dp_sticky = (ex5_dp_prod_norm != 0);
-                                dp_res_frac = 52'd0;
-                            end else begin
-                                dp_prod_shifted = ex5_dp_prod_norm >> (12'd1 - ex5_dp_exp);
-                                dp_guard = dp_prod_shifted[52];
-                                dp_round = dp_prod_shifted[51];
-                                dp_sticky = 1'b0;
-                                for (i_dp = 0; i_dp < 51; i_dp = i_dp + 1) begin
-                                    if (dp_prod_shifted[i_dp]) dp_sticky = 1'b1;
-                                end
-                                dp_res_frac = dp_prod_shifted[104:53];
-                            end
-
-                            dp_round_up = 1'b0;
-                            case (ex5_rm)
-                                `RM_RNE: dp_round_up = dp_guard && (dp_round || dp_sticky || dp_res_frac[0]);
-                                `RM_RTZ: dp_round_up = 1'b0;
-                                `RM_RDN: dp_round_up = ex5_dp_res_sign && (dp_guard || dp_round || dp_sticky);
-                                `RM_RUP: dp_round_up = !ex5_dp_res_sign && (dp_guard || dp_round || dp_sticky);
-                                `RM_RMM: dp_round_up = dp_guard;
-                                default: dp_round_up = 1'b0;
-                            endcase
-
-                            dp_res_frac = dp_res_frac + (dp_round_up ? 52'd1 : 52'd0);
-                            ex6_res <= {ex5_dp_res_sign, dp_res_exp, dp_res_frac};
-                            if (dp_guard || dp_round || dp_sticky) begin
-                                ex6_flags[`FF_UF] <= 1'b1;
+                        dp_res_frac = ex5_dp_res_frac + (ex5_dp_round_up ? 52'd1 : 52'd0);
+                        dp_res_exp = ex5_dp_res_exp;
+                        if (ex5_dp_round_up && (&ex5_dp_res_frac)) begin
+                            if (dp_res_exp == 11'h7FE) begin
+                                dp_res_exp = 11'h7FF;
+                                ex6_flags[`FF_OF] <= 1'b1;
                                 ex6_flags[`FF_NX] <= 1'b1;
+                            end else begin
+                                dp_res_exp = dp_res_exp + 11'd1;
                             end
-                        end else begin
-                            dp_res_exp = ex5_dp_exp[10:0];
-                            dp_guard = ex5_dp_prod_norm[52];
-                            dp_round = ex5_dp_prod_norm[51];
-                            dp_sticky = 1'b0;
-                            for (i_dp = 0; i_dp < 51; i_dp = i_dp + 1) begin
-                                if (ex5_dp_prod_norm[i_dp]) dp_sticky = 1'b1;
-                            end
-
-                            dp_round_up = 1'b0;
-                            case (ex5_rm)
-                                `RM_RNE: dp_round_up = dp_guard && (dp_round || dp_sticky || ex5_dp_prod_norm[53]);
-                                `RM_RTZ: dp_round_up = 1'b0;
-                                `RM_RDN: dp_round_up = ex5_dp_res_sign && (dp_guard || dp_round || dp_sticky);
-                                `RM_RUP: dp_round_up = !ex5_dp_res_sign && (dp_guard || dp_round || dp_sticky);
-                                `RM_RMM: dp_round_up = dp_guard;
-                                default: dp_round_up = 1'b0;
-                            endcase
-
-                            dp_res_frac = ex5_dp_prod_norm[104:53] + (dp_round_up ? 52'd1 : 52'd0);
-                            if (dp_round_up && (&ex5_dp_prod_norm[104:53])) begin
-                                if (dp_res_exp == 11'h7FE) begin
-                                    dp_res_exp = 11'h7FF;
-                                    ex6_flags[`FF_OF] <= 1'b1;
-                                    ex6_flags[`FF_NX] <= 1'b1;
-                                end else begin
-                                    dp_res_exp = dp_res_exp + 11'd1;
-                                end
-                            end
-                            ex6_res <= {ex5_dp_res_sign, dp_res_exp, dp_res_frac};
-                            if (dp_guard || dp_round || dp_sticky) ex6_flags[`FF_NX] <= 1'b1;
                         end
+                        ex6_res <= {ex5_dp_res_sign, dp_res_exp, dp_res_frac};
+                        if (ex5_dp_underflow) ex6_flags[`FF_UF] <= 1'b1;
+                        if (ex5_dp_inexact) ex6_flags[`FF_NX] <= 1'b1;
                     end
                 end else begin
                     if (ex5_sp_special) begin
                         ex6_res <= ex5_sp_special_res;
                         ex6_flags <= ex5_sp_special_flags;
+                    end else if (ex5_sp_overflow) begin
+                        ex6_res <= {32'hFFFFFFFF, ex5_sp_res_sign, 8'hFF, 23'd0};
+                        ex6_flags[`FF_OF] <= 1'b1;
+                        ex6_flags[`FF_NX] <= 1'b1;
                     end else begin
-                        if ($signed(ex5_sp_exp) >= $signed(9'd255)) begin
-                            ex6_res <= {32'hFFFFFFFF, ex5_sp_res_sign, 8'hFF, 23'd0};
-                            ex6_flags[`FF_OF] <= 1'b1;
-                            ex6_flags[`FF_NX] <= 1'b1;
-                        end else if ($signed(ex5_sp_exp) <= $signed(9'd0)) begin
-                            sp_res_exp = 8'd0;
-                            if ($signed(ex5_sp_exp) < $signed(-9'd25)) begin
-                                sp_guard = 1'b0;
-                                sp_round = 1'b0;
-                                sp_sticky = (ex5_sp_prod_norm != 0);
-                                sp_res_frac = 23'd0;
-                            end else begin
-                                sp_prod_shifted = ex5_sp_prod_norm >> (9'd1 - ex5_sp_exp);
-                                sp_guard = sp_prod_shifted[23];
-                                sp_round = sp_prod_shifted[22];
-                                sp_sticky = 1'b0;
-                                for (i_sp = 0; i_sp < 22; i_sp = i_sp + 1) begin
-                                    if (sp_prod_shifted[i_sp]) sp_sticky = 1'b1;
-                                end
-                                sp_res_frac = sp_prod_shifted[46:24];
-                            end
-
-                            sp_round_up = 1'b0;
-                            case (ex5_rm)
-                                `RM_RNE: sp_round_up = sp_guard && (sp_round || sp_sticky || sp_res_frac[0]);
-                                `RM_RTZ: sp_round_up = 1'b0;
-                                `RM_RDN: sp_round_up = ex5_sp_res_sign && (sp_guard || sp_round || sp_sticky);
-                                `RM_RUP: sp_round_up = !ex5_sp_res_sign && (sp_guard || sp_round || sp_sticky);
-                                `RM_RMM: sp_round_up = sp_guard;
-                                default: sp_round_up = 1'b0;
-                            endcase
-
-                            sp_res_frac = sp_res_frac + (sp_round_up ? 23'd1 : 23'd0);
-                            ex6_res <= {32'hFFFFFFFF, ex5_sp_res_sign, sp_res_exp, sp_res_frac};
-                            if (sp_guard || sp_round || sp_sticky) begin
-                                ex6_flags[`FF_UF] <= 1'b1;
+                        sp_res_frac = ex5_sp_res_frac + (ex5_sp_round_up ? 23'd1 : 23'd0);
+                        sp_res_exp = ex5_sp_res_exp;
+                        if (ex5_sp_round_up && (&ex5_sp_res_frac)) begin
+                            if (sp_res_exp == 8'hFE) begin
+                                sp_res_exp = 8'hFF;
+                                ex6_flags[`FF_OF] <= 1'b1;
                                 ex6_flags[`FF_NX] <= 1'b1;
+                            end else begin
+                                sp_res_exp = sp_res_exp + 8'd1;
                             end
-                        end else begin
-                            sp_res_exp = ex5_sp_exp[7:0];
-                            sp_guard = ex5_sp_prod_norm[23];
-                            sp_round = ex5_sp_prod_norm[22];
-                            sp_sticky = 1'b0;
-                            for (i_sp = 0; i_sp < 22; i_sp = i_sp + 1) begin
-                                if (ex5_sp_prod_norm[i_sp]) sp_sticky = 1'b1;
-                            end
-
-                            sp_round_up = 1'b0;
-                            case (ex5_rm)
-                                `RM_RNE: sp_round_up = sp_guard && (sp_round || sp_sticky || ex5_sp_prod_norm[24]);
-                                `RM_RTZ: sp_round_up = 1'b0;
-                                `RM_RDN: sp_round_up = ex5_sp_res_sign && (sp_guard || sp_round || sp_sticky);
-                                `RM_RUP: sp_round_up = !ex5_sp_res_sign && (sp_guard || sp_round || sp_sticky);
-                                `RM_RMM: sp_round_up = sp_guard;
-                                default: sp_round_up = 1'b0;
-                            endcase
-
-                            sp_res_frac = ex5_sp_prod_norm[46:24] + (sp_round_up ? 23'd1 : 23'd0);
-                            if (sp_round_up && (&ex5_sp_prod_norm[46:24])) begin
-                                if (sp_res_exp == 8'hFE) begin
-                                    sp_res_exp = 8'hFF;
-                                    ex6_flags[`FF_OF] <= 1'b1;
-                                    ex6_flags[`FF_NX] <= 1'b1;
-                                end else begin
-                                    sp_res_exp = sp_res_exp + 8'd1;
-                                end
-                            end
-                            ex6_res <= {32'hFFFFFFFF, ex5_sp_res_sign, sp_res_exp, sp_res_frac};
-                            if (sp_guard || sp_round || sp_sticky) ex6_flags[`FF_NX] <= 1'b1;
                         end
+                        ex6_res <= {32'hFFFFFFFF, ex5_sp_res_sign, sp_res_exp, sp_res_frac};
+                        if (ex5_sp_underflow) ex6_flags[`FF_UF] <= 1'b1;
+                        if (ex5_sp_inexact) ex6_flags[`FF_NX] <= 1'b1;
                     end
                 end
             end
