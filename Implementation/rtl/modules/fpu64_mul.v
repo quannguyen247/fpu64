@@ -556,7 +556,7 @@ module fpu64_mul (
                             endcase
 
                             dp_res_frac = ex5_dp_prod_norm[104:53] + (dp_round_up ? 52'd1 : 52'd0);
-                            if (dp_res_frac == 52'd0 && dp_round_up) begin
+                            if (dp_round_up && (&ex5_dp_prod_norm[104:53])) begin
                                 if (dp_res_exp == 11'h7FE) begin
                                     dp_res_exp = 11'h7FF;
                                     ex6_flags[`FF_OF] <= 1'b1;
@@ -632,7 +632,7 @@ module fpu64_mul (
                             endcase
 
                             sp_res_frac = ex5_sp_prod_norm[46:24] + (sp_round_up ? 23'd1 : 23'd0);
-                            if (sp_res_frac == 23'd0 && sp_round_up) begin
+                            if (sp_round_up && (&ex5_sp_prod_norm[46:24])) begin
                                 if (sp_res_exp == 8'hFE) begin
                                     sp_res_exp = 8'hFF;
                                     ex6_flags[`FF_OF] <= 1'b1;
